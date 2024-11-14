@@ -38,7 +38,7 @@ func TestLRUCache_RemoveOldest(t *testing.T) {
 func TestLRUCache_Add(t *testing.T) {
 	lru := New(int64(0), nil)
 	lru.Add("key1", String("1234"))
-	lru.Add("key1", String("111"))
+	lru.Add("key1", String("666"))
 	if lru.nByets != int64(len("key1")+len("111")) {
 		t.Fatal("expected 7, but got", lru.nByets)
 	}

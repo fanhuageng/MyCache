@@ -5,7 +5,7 @@ import "container/list"
 type LRUCache struct {
 	maxBytes  int64
 	nByets    int64
-	ll        *list.List
+	ll        *list.List //双向链表
 	cache     map[string]*list.Element
 	onEvicted func(key string, value Value) // 删除缓存的回调函数
 }

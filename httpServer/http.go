@@ -1,18 +1,27 @@
 package httpServer
 
 import (
+	"MyCache/consistentHash"
+	"MyCache/distributedNode"
 	"MyCache/single-cache"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 )
 
 const defaultBasePath = "/fcache/"
+const defaultMultiple = 50
 
 type HTTPPool struct {
-	self     string
-	basePath string
+	self        string
+	basePath    string
+	mu          sync.Mutex
+	peers       *consistentHash.Map // 一致性哈希
+	httpClients map[string]*httpClient
 }
 
 func NewHTTPPool(self string) *HTTPPool {
@@ -21,6 +30,33 @@ func NewHTTPPool(self string) *HTTPPool {
 		basePath: defaultBasePath,
 	}
 }
+
+// 实例化一致性哈希算法，并添加节点
+func (p *HTTPPool) Set(peers ...string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.peers = consistentHash.New(defaultMultiple, nil)
+	p.peers.Add(peers...)
+	p.httpClients = make(map[string]*httpClient, len(peers))
+	// 为每一个节点创建HTTP客户端
+	for _, peer := range peers {
+		p.httpClients[peer] = &httpClient{baseURL: peer + p.basePath}
+	}
+}
+
+// 根据具体的 key，选择节点，返回节点对应的 HTTP 客户端
+func (p *HTTPPool) PickPeer(key string) (distributedNode.PeerGetter, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	peer := p.peers.Get(key) // 通过key找到对应的真实节点
+	if peer != "" && peer != p.self {
+		p.Log("Pick peer %s", peer)
+		return p.httpClients[peer], true
+	}
+	return nil, false
+}
+
+var _ distributedNode.PeerPicker = (*HTTPPool)(nil)
 
 func (p *HTTPPool) Log(format string, v ...interface{}) {
 	log.Printf("[Server %s] %s", p.self, fmt.Sprintf(format, v...))
@@ -54,3 +90,27 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Write(view.ByteSlice())
 }
+
+type httpClient struct {
+	baseURL string // 要访问的远程节点的地址
+}
+
+func (h *httpClient) Get(group string, key string) ([]byte, error) {
+	// 下面的代码中%v/%v/%v是错误的，这里调试时发现u会变为http://localhost:8003/fcache//scores导致返回错误404，找不到客户端
+	u := fmt.Sprintf("%v%v/%v", h.baseURL, url.QueryEscape(group), url.QueryEscape(key))
+	response, err := http.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned: %v", response.Status)
+	}
+	bytes, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response body: %v", err)
+	}
+	return bytes, nil
+}
+
+var _ distributedNode.PeerGetter = (*httpClient)(nil)

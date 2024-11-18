@@ -2,6 +2,7 @@ package single_cache
 
 import (
 	"MyCache/distributedNode"
+	"MyCache/singleFlight"
 	"fmt"
 	"log"
 	"sync"
@@ -12,6 +13,7 @@ type Group struct {
 	getter    Getter // 缓存未命中时，获得源数据的回调
 	mainCache cache  // 一开始实现的并发缓存
 	peers     distributedNode.PeerPicker
+	loader    *singleFlight.SFGroup
 }
 
 var (
@@ -29,6 +31,7 @@ func NewGroup(name string, getter Getter, cacheBytes int64) *Group {
 		name:      name,
 		getter:    getter,
 		mainCache: cache{cacheBytes: cacheBytes},
+		loader:    &singleFlight.SFGroup{},
 	}
 	groups[name] = g
 	return g
@@ -72,16 +75,23 @@ func (g *Group) Get(key string) (ByteView, error) {
 	return g.load(key) // 未命中，本地查找或远程查找
 }
 
-func (g *Group) load(key string) (ByteView, error) {
-	if g.peers != nil {
-		if peer, ok := g.peers.PickPeer(key); ok {
-			if value, err := g.loadRemote(peer, key); err == nil {
-				return value, nil
+func (g *Group) load(key string) (value ByteView, err error) {
+	viewi, err := g.loader.Do(key, func() (interface{}, error) {
+		if g.peers != nil {
+			if peer, ok := g.peers.PickPeer(key); ok {
+				if value, err := g.loadRemote(peer, key); err == nil {
+					return value, nil
+				}
+				log.Printf("Failed to load from remote peer %s", peer)
 			}
-			log.Printf("Failed to load from remote peer %s", peer)
 		}
+		return g.loadLocally(key)
+	})
+
+	if err == nil {
+		return viewi.(ByteView), nil
 	}
-	return g.loadLocally(key)
+	return
 }
 
 // 本地查找

@@ -1,6 +1,7 @@
 package single_cache
 
 import (
+	pb "MyCache/cacheProtoBuf/mycachepb"
 	"MyCache/distributedNode"
 	"MyCache/singleFlight"
 	"fmt"
@@ -107,11 +108,21 @@ func (g *Group) loadLocally(key string) (ByteView, error) {
 
 // 远程查找
 func (g *Group) loadRemote(peergetter distributedNode.PeerGetter, key string) (ByteView, error) {
-	bytes, error := peergetter.Get(g.name, key) // 从远程节点中查询最终值
-	if error != nil {
-		return ByteView{}, error
+	//bytes, error := peergetter.Get(g.name, key) // 从远程节点中查询最终值
+	//if error != nil {
+	//	return ByteView{}, error
+	//}
+	//return ByteView{b: bytes}, nil
+	req := &pb.Request{
+		Group: g.name,
+		Key:   key,
 	}
-	return ByteView{b: bytes}, nil
+	res := &pb.Response{}
+	err := peergetter.Get(req, res)
+	if err != nil {
+		return ByteView{}, err
+	}
+	return ByteView{res.Value}, nil
 }
 
 func (g *Group) populateCache(key string, value ByteView) {

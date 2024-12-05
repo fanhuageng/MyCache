@@ -52,7 +52,7 @@ func (p *HTTPPool) PickPeer(key string) (distributedNode.PeerGetter, bool) {
 	defer p.mu.Unlock()
 	peer := p.peers.Get(key) // 通过key找到对应的真实节点
 	if peer != "" && peer != p.self {
-		p.Log("Pick peer %s", peer)
+		p.Log("pick peer %s", peer)
 		return p.httpClients[peer], true
 	}
 	return nil, false
@@ -105,7 +105,7 @@ type httpClient struct {
 }
 
 func (h *httpClient) Get(in *pb.Request, out *pb.Response) error {
-	// 下面的代码中%v/%v/%v是错误的，这里调试时发现u会变为http://localhost:8003/fcache//scores导致返回错误404，找不到客户端
+	// 下面的代码中%v/%v/%v是错误的，这里调试时发现u会变为http://localhost:8003/fcache//scores导致返回错误404，客户端请求错误
 	u := fmt.Sprintf("%v%v/%v", h.baseURL, url.QueryEscape(in.GetGroup()), url.QueryEscape(in.GetKey()))
 	response, err := http.Get(u)
 	if err != nil {
@@ -128,4 +128,4 @@ func (h *httpClient) Get(in *pb.Request, out *pb.Response) error {
 	return nil
 }
 
-var _ distributedNode.PeerGetter = (*httpClient)(nil)
+var _ distributedNode.PeerGetter = (*httpClient)(nil) // 一种编译时静态检查的技巧，用来保证某个类型实现了指定的接口

@@ -20,11 +20,21 @@ var db = map[string]string{
 	"h": "430",
 }
 
+// 创建一个全局跳表实例
+var skipList = single_cache.NewSkipList()
+
+// 初始化跳表数据
+func init() {
+	for k, v := range db {
+		skipList.Insert(k, []byte(v))
+	}
+}
+
 func createGroup() *single_cache.Group {
 	return single_cache.NewGroup("scores", single_cache.GetterFunc(
 		func(key string) ([]byte, error) {
-			log.Println("[SlowDB] search key", key)
-			if v, ok := db[key]; ok {
+			log.Println("[SkipListDB] search key", key)
+			if v, ok := skipList.Search(key); ok {
 				return []byte(v), nil
 			}
 			return nil, fmt.Errorf("%s not exist", key)
@@ -62,7 +72,7 @@ func main() {
 	var api bool
 
 	flag.IntVar(&port, "port", 8001, "MyCache server port")
-	flag.BoolVar(&api, "api", false, "Start a api server?")
+	flag.BoolVar(&api, "api", true, "Start a api server?")
 	flag.Parse()
 
 	apiAddr := "http://localhost:9999"
